@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>世界地圖國家測驗 | World Map Country Quiz</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --accent: #38bdf8;
+      --correct: #22c55e;
+      --wrong: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", "Noto Sans TC", "Hiragino Sans", "Yu Gothic", "Microsoft JhengHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: var(--panel);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid #334155;
+      flex-shrink: 0;
+    }
+    header h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-right: 8px;
+      white-space: nowrap;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      flex: 1;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    select, button {
+      background: #334155;
+      color: var(--text);
+      border: 1px solid #475569;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    select:hover, button:hover { background: #475569; }
+    button.primary {
+      background: var(--accent);
+      color: #0f172a;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    button.primary:hover { filter: brightness(1.1); }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .score {
+      margin-left: auto;
+      font-size: 0.95rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .score strong { color: var(--accent); }
+    #map {
+      flex: 1;
+      width: 100%;
+      background: #e2e8f0;
+      position: relative;
+    }
+    .quiz-bar {
+      background: var(--panel);
+      padding: 12px 16px;
+      border-top: 1px solid #334155;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      flex-shrink: 0;
+      min-height: 64px;
+    }
+    .question {
+      font-size: 1.25rem;
+      font-weight: 600;
+      flex: 1;
+      min-width: 200px;
+    }
+    .question .lang {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .feedback {
+      font-size: 1.1rem;
+      font-weight: 600;
+      min-width: 120px;
+      text-align: center;
+    }
+    .feedback.correct { color: var(--correct); }
+    .feedback.wrong { color: var(--wrong); }
+    .mode-hint {
+      font-size: 0.85rem;
+      color: var(--muted);
+      width: 100%;
+    }
+    .leaflet-popup-content {
+      margin: 8px 12px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .leaflet-popup-content .name-zh { font-weight: 600; font-size: 1.05rem; }
+    .leaflet-popup-content .name-en,
+    .leaflet-popup-content .name-ja { color: #64748b; font-size: 0.9rem; }
+    .country-label {
+      background: rgba(15, 23, 42, 0.9) !important;
+      border: none !important;
+      border-radius: 4px !important;
+      color: #e2e8f0 !important;
+      font-size: 11px !important;
+      padding: 3px 6px !important;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
+    }
+    .loading {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 1.15rem;
+      z-index: 2000;
+    }
+    .loading .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #334155;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 640px) {
+      header h1 { font-size: 1rem; }
+      .question { font-size: 1.05rem; }
+      .score { margin-left: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div>載入本地地圖資料中…</div>
+  </div>
+
+  <header>
+    <h1>🌍 世界地圖國家測驗</h1>
+    <div class="controls">
+      <label>
+        模式
+        <select id="modeSelect">
+          <option value="quiz">測驗模式</option>
+          <option value="study">學習模式</option>
+        </select>
+      </label>
+      <label>
+        大洲
+        <select id="continentSelect">
+          <option value="all">全部</option>
+          <option value="Asia">亞洲 Asia</option>
+          <option value="Europe">歐洲 Europe</option>
+          <option value="Africa">非洲 Africa</option>
+          <option value="North America">北美洲 N. America</option>
+          <option value="South America">南美洲 S. America</option>
+          <option value="Oceania">大洋洲 Oceania</option>
+        </select>
+      </label>
+      <button id="nextBtn" class="primary">下一題</button>
+      <button id="revealBtn">顯示答案</button>
+      <button id="resetScoreBtn">重置分數</button>
+    </div>
+    <div class="score">
+      正確 <strong id="correctCount">0</strong> /
+      總計 <strong id="totalCount">0</strong>
+      （正確率 <strong id="accuracy">–</strong>）
+    </div>
+  </header>
+
+  <div id="map"></div>
+
+  <div class="quiz-bar">
+    <div class="question" id="questionArea">請選擇模式並開始</div>
+    <div class="feedback" id="feedback"></div>
+    <div class="mode-hint" id="modeHint">
+      測驗模式：點選地圖上的國家。學習模式：點選或滑鼠移到國家上查看名稱。
+    </div>
+  </div>
+
+  <script>
+    // 本地資料路徑（相對路徑，適合 GitHub Pages / 本機開啟）
+    const GEOJSON_URL = "data/countries.geojson";
+    const NAMES = {
+      "zh-tw": "data/names-zh-tw.json",
+      en: "data/names-en.json",
+      ja: "data/names-ja.json"
+    };
+
+    let map, geoLayer;
+    let countriesData = [];
+    let currentTarget = null;
+    let mode = "quiz";
+    let continentFilter = "all";
+    let correct = 0, total = 0;
+    let answered = false;
+
+    map = L.map("map", {
+      worldCopyJump: true,
+      minZoom: 1,
+      maxZoom: 8
+    }).setView([20, 0], 2);
+
+    // 使用 OpenStreetMap 底圖（免費、不需 API Key）
+    // 若想完全離線，可把下面這段註解掉，只保留深色背景 + 國家多邊形
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      subdomains: "abc",
+      maxZoom: 19
+    }).addTo(map);
+
+    async function loadData() {
+      try {
+        const [geoRes, zhRes, enRes, jaRes] = await Promise.all([
+          fetch(GEOJSON_URL),
+          fetch(NAMES["zh-tw"]),
+          fetch(NAMES.en),
+          fetch(NAMES.ja)
+        ]);
+        if (!geoRes.ok) throw new Error("GeoJSON 載入失敗");
+        const geojson = await geoRes.json();
+        const zhList = await zhRes.json();
+        const enList = await enRes.json();
+        const jaList = await jaRes.json();
+
+        const zhMap = Object.fromEntries(zhList.map(c => [c.alpha2.toLowerCase(), c.name]));
+        const enMap = Object.fromEntries(enList.map(c => [c.alpha2.toLowerCase(), c.name]));
+        const jaMap = Object.fromEntries(jaList.map(c => [c.alpha2.toLowerCase(), c.name]));
+
+        const features = geojson.features.filter(f => {
+          const iso = (f.properties.ISO_A2 || "").toUpperCase();
+          // 排除南極洲與無有效 ISO 的項目
+          if (!iso || iso === "-99" || iso === "AQ") return false;
+          return true;
+        });
+
+        countriesData = features.map(f => {
+          const p = f.properties;
+          const iso2 = (p.ISO_A2 || "").toLowerCase();
+          const continent = p.CONTINENT || "Other";
+          const admin = p.ADMIN || p.NAME || "";
+          const zh = zhMap[iso2] || admin;
+          const en = enMap[iso2] || admin;
+          const ja = jaMap[iso2] || admin;
+          return {
+            feature: f,
+            iso2,
+            continent,
+            names: { zh, en, ja },
+            admin
+          };
+        });
+
+        document.getElementById("loading").style.display = "none";
+        updateUI();
+        if (mode === "quiz") nextQuestion();
+      } catch (err) {
+        console.error(err);
+        document.getElementById("loading").innerHTML =
+          "<div>載入失敗</div><div style='font-size:0.9rem;color:#94a3b8;margin-top:8px'>請確認 data/ 資料夾與檔案是否存在，並用本地伺服器開啟（不要直接雙擊檔案）。</div>";
+      }
+    }
+
+    function getFilteredCountries() {
+      if (continentFilter === "all") return countriesData;
+      return countriesData.filter(c => c.continent === continentFilter);
+    }
+
+    function styleFeature(feature) {
+      if (mode === "study") {
+        return {
+          fillColor: "#3b82f6",
+          weight: 1,
+          opacity: 1,
+          color: "#1e40af",
+          fillOpacity: 0.35
+        };
+      }
+      // 測驗模式：半透明藍色，在 OSM 淺色底圖上清楚可見
+      return {
+        fillColor: "#2563eb",
+        weight: 1,
+        opacity: 1,
+        color: "#1e3a8a",
+        fillOpacity: 0.4
+      };
+    }
+
+    function onEachFeature(feature, layer) {
+      const country = countriesData.find(c => c.feature === feature);
+      if (!country) return;
+
+      layer.on({
+        mouseover: (e) => {
+          if (mode === "study" || (mode === "quiz" && answered)) {
+            e.target.setStyle({ weight: 2, color: "#38bdf8", fillOpacity: 0.8 });
+          } else if (mode === "quiz" && !answered) {
+            e.target.setStyle({ weight: 2, color: "#94a3b8", fillOpacity: 0.7 });
+          }
+        },
+        mouseout: (e) => {
+          if (geoLayer) geoLayer.resetStyle(e.target);
+        },
+        click: (e) => {
+          if (mode === "study") {
+            showPopup(country, e.latlng);
+          } else if (mode === "quiz" && !answered) {
+            handleGuess(country);
+          }
+        }
+      });
+
+      if (mode === "study") {
+        layer.bindTooltip(
+          `<div class="name-zh">${country.names.zh}</div>
+           <div class="name-en">${country.names.en}</div>
+           <div class="name-ja">${country.names.ja}</div>`,
+          { sticky: true, className: "country-label", direction: "top" }
+        );
+      }
+    }
+
+    function showPopup(country, latlng) {
+      const html = `
+        <div class="name-zh">${country.names.zh}</div>
+        <div class="name-en">${country.names.en}</div>
+        <div class="name-ja">${country.names.ja}</div>
+      `;
+      L.popup().setLatLng(latlng).setContent(html).openOn(map);
+    }
+
+    function renderMap() {
+      if (geoLayer) map.removeLayer(geoLayer);
+      const filtered = getFilteredCountries();
+      const collection = {
+        type: "FeatureCollection",
+        features: filtered.map(c => c.feature)
+      };
+
+      geoLayer = L.geoJSON(collection, {
+        style: styleFeature,
+        onEachFeature: onEachFeature
+      }).addTo(map);
+
+      if (continentFilter !== "all" && filtered.length > 0) {
+        try {
+          map.fitBounds(geoLayer.getBounds(), { padding: [30, 30], maxZoom: 4 });
+        } catch (e) {}
+      } else {
+        map.setView([20, 0], 2);
+      }
+    }
+
+    function nextQuestion() {
+      answered = false;
+      document.getElementById("feedback").textContent = "";
+      document.getElementById("feedback").className = "feedback";
+
+      const pool = getFilteredCountries();
+      if (pool.length === 0) {
+        document.getElementById("questionArea").innerHTML = "此大洲沒有可用國家資料。";
+        currentTarget = null;
+        return;
+      }
+      currentTarget = pool[Math.floor(Math.random() * pool.length)];
+      const n = currentTarget.names;
+      document.getElementById("questionArea").innerHTML = `
+        請找出：<strong>${n.zh}</strong>
+        <span class="lang">${n.en}　/　${n.ja}</span>
+      `;
+      renderMap();
+    }
+
+    function handleGuess(guessed) {
+      if (!currentTarget || answered) return;
+      answered = true;
+      total++;
+      const isCorrect =
+        guessed === currentTarget ||
+        (guessed.iso2 && currentTarget.iso2 && guessed.iso2 === currentTarget.iso2);
+
+      if (isCorrect) {
+        correct++;
+        document.getElementById("feedback").textContent = "✓ 正確！";
+        document.getElementById("feedback").className = "feedback correct";
+      } else {
+        document.getElementById("feedback").textContent = "✗ 錯誤";
+        document.getElementById("feedback").className = "feedback wrong";
+        geoLayer.eachLayer(layer => {
+          if (layer.feature === currentTarget.feature) {
+            layer.setStyle({
+              fillColor: "#22c55e",
+              weight: 3,
+              color: "#86efac",
+              fillOpacity: 0.75
+            });
+            layer.bringToFront();
+            try {
+              map.fitBounds(layer.getBounds(), { padding: [40, 40], maxZoom: 5 });
+            } catch (e) {}
+          }
+        });
+      }
+      updateScore();
+      const n = currentTarget.names;
+      document.getElementById("questionArea").innerHTML = `
+        答案：<strong>${n.zh}</strong>
+        <span class="lang">${n.en}　/　${n.ja}</span>
+      `;
+    }
+
+    function revealAnswer() {
+      if (mode !== "quiz" || !currentTarget || answered) return;
+      answered = true;
+      total++;
+      document.getElementById("feedback").textContent = "已顯示答案";
+      document.getElementById("feedback").className = "feedback";
+      geoLayer.eachLayer(layer => {
+        if (layer.feature === currentTarget.feature) {
+          layer.setStyle({
+            fillColor: "#22c55e",
+            weight: 3,
+            color: "#86efac",
+            fillOpacity: 0.75
+          });
+          layer.bringToFront();
+          try {
+            map.fitBounds(layer.getBounds(), { padding: [40, 40], maxZoom: 5 });
+          } catch (e) {}
+        }
+      });
+      updateScore();
+    }
+
+    function updateScore() {
+      document.getElementById("correctCount").textContent = correct;
+      document.getElementById("totalCount").textContent = total;
+      const acc = total === 0 ? "–" : Math.round((correct / total) * 100) + "%";
+      document.getElementById("accuracy").textContent = acc;
+    }
+
+    function updateUI() {
+      mode = document.getElementById("modeSelect").value;
+      continentFilter = document.getElementById("continentSelect").value;
+      const nextBtn = document.getElementById("nextBtn");
+      const revealBtn = document.getElementById("revealBtn");
+      if (mode === "study") {
+        nextBtn.disabled = true;
+        revealBtn.disabled = true;
+        document.getElementById("questionArea").innerHTML = "學習模式：點選或滑鼠移到國家上查看名稱";
+        document.getElementById("feedback").textContent = "";
+        document.getElementById("modeHint").textContent =
+          "學習模式：可點選任何國家查看「繁中 / 英文 / 日文」名稱，方便記憶後再切換測驗。";
+      } else {
+        nextBtn.disabled = false;
+        revealBtn.disabled = false;
+        document.getElementById("modeHint").textContent =
+          "測驗模式：根據上方顯示的國家名稱，在地圖上點選正確位置。選錯會高亮正確答案。";
+      }
+      answered = false;
+      currentTarget = null;
+      renderMap();
+      if (mode === "quiz") nextQuestion();
+    }
+
+    document.getElementById("modeSelect").addEventListener("change", updateUI);
+    document.getElementById("continentSelect").addEventListener("change", updateUI);
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      if (mode === "quiz") nextQuestion();
+    });
+    document.getElementById("revealBtn").addEventListener("click", revealAnswer);
+    document.getElementById("resetScoreBtn").addEventListener("click", () => {
+      correct = 0;
+      total = 0;
+      updateScore();
+    });
+
+    loadData();
+  </script>
+</body>
+</html>
